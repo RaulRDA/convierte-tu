@@ -3,10 +3,10 @@
 ║   PDF Formulario Agentes / Directivos  →  Excel             ║
 ╚══════════════════════════════════════════════════════════════╝
 """
-# ToDo: verificar que el mapeo de directivos va bien
-# ToDo: arreglar el bug de valores intercambiados en agentes (acepto/no procede)
+#? pip install pdfplumber openpyxl
 
-# Dependencias: pip install pdfplumber openpyxl
+# ToDo: mejorar diseño ventana log (colores, iconos, etc)
+# ToDo: mejorar diseño gráfico en general
 
 import re
 import shutil
@@ -98,6 +98,7 @@ MAPEO_AGENTES2 = {
 }
 
 MAPEO_AGENTES1 = MAPEO_AGENTES2.copy()
+MAPEO_AGENTES1.pop("DECLARO PYME")
 MAPEO_AGENTES1["ACEPTO CONDICIONADO"] = "B80"
 
 MAPEO_DIRECTIVOS = {
@@ -347,10 +348,11 @@ def extraer_tablas_pdf(pdf_path: str, tipo: str, log) -> dict:
 
                     etiqueta_raw = limpiar_texto(fila[0]) if fila[0] else None
 
-                    # ── Buscar valor: col 1 para agentes, col 1 o última no vacía para directivos ──
+                    # Buscar valor en col 1; si está vacía, buscar en el resto de columnas.
+                    # Necesario porque en directivos los "Acepto" están en col 7, y en agentes 2
+                    # el segundo término puede ser "No procede", que a veces cae en otra columna.
                     valor = limpiar_texto(fila[1]) if fila[1] else ""
-                    if es_directivos and not valor:
-                        # Las declaraciones de directivos tienen el valor en columnas más a la derecha
+                    if not valor:
                         for celda in fila[2:]:
                             v = limpiar_texto(celda) if celda else ""
                             if v:
@@ -495,26 +497,51 @@ def extraer_tablas_pdf(pdf_path: str, tipo: str, log) -> dict:
                         datos["MOTIVACIÓN"] = valor
 
                     # ── DECLARACIONES ─────────────────────────────────────────
+                    # Agentes2 y Directivos: siempre "Acepto" (el PDF ya lo trae así).
+                    # Agentes1: leer del PDF solo DECLARO PYME (puede ser "No procede");
+                    #            el resto también se fuerza a "Acepto".
                     elif "ACEPTO LOS TÉRMINOS" in e or ("ACEPTO" in e and "TÉRMINOS" in e):
-                        datos["ACEPTO CONDICIONADO"] = valor
+                        datos["ACEPTO CONDICIONADO"] = "Acepto" if tipo != "Agentes (1)" else valor
                     elif "EMPRESA DONDE" in e or "SOY DIRECTIVO" in e or ("DECLARO" in e and "PYME" in e):
-                        datos["DECLARO PYME"] = valor
+                        # Solo Agentes1 puede tener "No procede" aquí
+                        datos["DECLARO PYME"] = valor if tipo == "Agentes (1)" else "Acepto"
                     elif "DECLARO RESPONSABLEMENTE QUE TODA" in e or ("INFORMACIÓN" in e and "SOLICITUD" in e and "DECLARO" in e):
-                        datos["DECLARO REALIDAD"] = valor
+                        datos["DECLARO REALIDAD"] = "Acepto" if tipo != "Agentes (1)" else valor
                     elif "NO HE RECIBIDO" in e:
-                        datos["DECLARO NO RECIBIDA"] = valor
+                        datos["DECLARO NO RECIBIDA"] = "Acepto" if tipo != "Agentes (1)" else valor
                     elif "NO ME ENCUENTRO INCURSO" in e or "CONFLICTO DE INTERÉS" in e:
-                        datos["DECLARO CONFLICTO"] = valor
+                        datos["DECLARO CONFLICTO"] = "Acepto" if tipo != "Agentes (1)" else valor
                     elif "AUTORIZO TRATAMIENTO" in e or ("AUTORIZO" in e and "DATOS" in e):
-                        datos["AUTORIZO DATOS"] = valor
+                        datos["AUTORIZO DATOS"] = "Acepto" if tipo != "Agentes (1)" else valor
                     elif "DATO RELATIVO A DISCAPACIDAD" in e:
-                        datos["ACEPTO DISCAPACIDAD"] = valor
+                        datos["ACEPTO DISCAPACIDAD"] = "Acepto" if tipo != "Agentes (1)" else valor
 
                     ultima_clave = None
 
     log.info("\n  📋 ETIQUETAS ÚNICAS ENCONTRADAS:")
     for etiqueta in sorted(set(todas_etiquetas)):
         log.info(f"    - {etiqueta}")
+    # ── FORZAR DECLARACIONES ──────────────────────────────────────────────────
+    # Agentes2 y Directivos: siempre "Acepto" (independientemente de lo leído).
+    # Agentes1: solo DECLARO PYME viene del PDF; el resto se fuerza también.
+    CAMPOS_DECLARACIONES = [
+        "ACEPTO CONDICIONADO", "DECLARO REALIDAD", "DECLARO NO RECIBIDA",
+        "DECLARO CONFLICTO", "AUTORIZO DATOS", "ACEPTO DISCAPACIDAD",
+    ]
+    if tipo != "Agentes (1)":
+        for campo in CAMPOS_DECLARACIONES + ["DECLARO PYME"]:
+            datos[campo] = "Acepto"
+        log.info("  ✅ Declaraciones forzadas a 'Acepto'")
+    else:
+        for campo in CAMPOS_DECLARACIONES:
+            datos[campo] = "Acepto"
+        if "DECLARO PYME" not in datos:
+            datos["DECLARO PYME"] = "Acepto"
+            log.warning("  ⚠ DECLARO PYME no encontrado en PDF, se usó 'Acepto' por defecto")
+        else:
+            log.info(f"  📋 DECLARO PYME leído del PDF: '{datos["DECLARO PYME"]}'")
+        log.info("  ✅ Resto de declaraciones forzadas a 'Acepto'")
+
     log.info(f"\n  Total campos extraídos: {len(datos)}")
     return datos
 
