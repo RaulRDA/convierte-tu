@@ -1,10 +1,8 @@
 """
 ╔══════════════════════════════════════════════════════════════╗
-║   PDF Formulario Agentes  →  Excel                           ║
+║   PDF Formulario Agentes / Directivos  →  Excel             ║
 ╚══════════════════════════════════════════════════════════════╝
 """
-
-# todo: añadir directivos, arreglar campos inversos en agentes
 
 # Dependencias: pip install pdfplumber openpyxl
 
@@ -27,8 +25,8 @@ from openpyxl.utils.cell import coordinate_from_string
 # ------------------------------------------------------------
 def get_base_dir() -> Path:
     if getattr(sys, 'frozen', False):
-        return Path(sys._MEIPASS)   # carpeta temporal del exe
-    return Path(__file__).parent    # carpeta del script
+        return Path(sys._MEIPASS)
+    return Path(__file__).parent
 
 
 BASE_DIR = get_base_dir()
@@ -120,13 +118,11 @@ MAPEO_DIRECTIVOS = {
     "PERSONA CON DISCAPACIDAD": "B21",
     "NIVEL DE ESTUDIOS": "B22",
     "TITULACION": "B23",
-
     # DATOS PROFESIONALES (Filas 26-29)
     "NOMBRE EMPRESA": "B26",
     "RELACIÓN CON LA EMPRESA": "B27",
     "DEPARTAMENTO EMPRESA": "B28",
     "PUESTO EMPRESA": "B29",
-
     # DATOS DE LA EMPRESA (Filas 32-51)
     "NIF EMPRESA": "B32",
     "ACTIVIDAD EMPRESA": "B33",
@@ -148,10 +144,8 @@ MAPEO_DIRECTIVOS = {
     "PLAN DIGITAL EMPRESA": "B49",
     "MUJER DIRECTIVA EMPRESA": "B50",
     "PORCENTAJE MUJERES EMPRESA": "B51",
-
     # MOTIVACIÓN (Fila 54)
     "MOTIVACIÓN": "B54",
-
     # DECLARACIONES (Filas 85-91)
     "ACEPTO CONDICIONADO": "B85",
     "DECLARO PYME": "B86",
@@ -162,9 +156,8 @@ MAPEO_DIRECTIVOS = {
     "ACEPTO DISCAPACIDAD": "B91",
 }
 
-# Establecer ícono para ventana
+
 def _set_icon(ventana):
-    """Aplica icono.ico a una ventana Tk si el archivo existe."""
     ico = BASE_DIR / "icono.ico"
     if ico.exists():
         try:
@@ -172,7 +165,7 @@ def _set_icon(ventana):
         except Exception:
             pass
 
-# Clase de ventana de registro
+
 class VentanaLog:
     def __init__(self, titulo="Procesando PDFs"):
         self.ventana = tk.Toplevel()
@@ -191,7 +184,7 @@ class VentanaLog:
 
         btn_frame = tk.Frame(self.ventana)
         btn_frame.pack(fill=tk.X, padx=10, pady=5)
-        
+
         # Marca de agua
         tk.Label(
             self.ventana,
@@ -241,14 +234,14 @@ class VentanaLog:
         if not self.procesando:
             self.ventana.destroy()
 
-# Función para limpiar texto
+
 def limpiar_texto(texto: str) -> str:
     if not texto or not isinstance(texto, str):
         return ""
     texto = texto.replace('\n', ' ').replace('\r', ' ')
     return re.sub(r'\s+', ' ', texto).strip()
 
-# Seleccionar tipo de plantilla
+
 def seleccionar_tipo_plantilla():
     ventana = tk.Toplevel()
     ventana.title("Seleccionar tipo de plantilla")
@@ -292,12 +285,12 @@ def seleccionar_tipo_plantilla():
     ventana.wait_window()
     return resultado[0] if resultado else None
 
-# Seleccionar carpeta de salida
+
 def seleccionar_carpeta_salida():
     carpeta = filedialog.askdirectory(title="Selecciona la carpeta donde guardar los resultados")
     return Path(carpeta) if carpeta else None
 
-# Verificar hoja de Excel
+
 def verificar_hoja_excel(archivo_excel, nombre_hoja_buscar, log):
     try:
         wb = openpyxl.load_workbook(archivo_excel, keep_vba=True, read_only=True)
@@ -318,8 +311,19 @@ def verificar_hoja_excel(archivo_excel, nombre_hoja_buscar, log):
         log.error(f"Error al leer Excel: {e}")
         return None
 
-# Extraer datos del PDF
-def extraer_tablas_pdf_agentes(pdf_path: str, log) -> dict:
+
+def extraer_tablas_pdf(pdf_path: str, tipo: str, log) -> dict:
+    """
+    Extrae datos del PDF según el tipo de formulario (Directivos o Agentes).
+
+    Diferencias entre formularios:
+    - Directivos: TIPO DE DOCUMENTO y Nº DOCUMENTO están INVERTIDOS en el PDF.
+    - Directivos: DEPARTAMENTO y PUESTO/CARGO no llevan "(empresa)" en la etiqueta.
+    - Directivos: las declaraciones (Acepto) están en la columna 7, no en la 1.
+    - Directivos: campos extra: TITULACION, RELACIÓN CON LA EMPRESA,
+                  CANALES RELACION EMPRESA, PERFIL TIC EMPRESA.
+    """
+    es_directivos = (tipo == "Directivos")
     log.info("🔍 Extrayendo datos del PDF...")
     datos = {}
     todas_etiquetas = []
@@ -340,12 +344,21 @@ def extraer_tablas_pdf_agentes(pdf_path: str, log) -> dict:
                         continue
 
                     etiqueta_raw = limpiar_texto(fila[0]) if fila[0] else None
-                    valor = limpiar_texto(fila[1]) if fila[1] else ""
 
-                    # FIX 1: fila sin etiqueta → FORMACIÓN GESTIÓN PROYECTOS
+                    # ── Buscar valor: col 1 para agentes, col 1 o última no vacía para directivos ──
+                    valor = limpiar_texto(fila[1]) if fila[1] else ""
+                    if es_directivos and not valor:
+                        # Las declaraciones de directivos tienen el valor en columnas más a la derecha
+                        for celda in fila[2:]:
+                            v = limpiar_texto(celda) if celda else ""
+                            if v:
+                                valor = v
+                                break
+
+                    # FIX agentes: fila sin etiqueta → FORMACIÓN GESTIÓN PROYECTOS
                     if not etiqueta_raw:
                         if ultima_clave == "FORMACIÓN DIGITALIZACIÓN" and valor:
-                            log.info(f"      [FIX1] → FORMACIÓN GESTIÓN PROYECTOS = '{valor}'")
+                            log.info(f"      [FIX] → FORMACIÓN GESTIÓN PROYECTOS = '{valor}'")
                             datos["FORMACIÓN GESTIÓN PROYECTOS"] = valor
                         ultima_clave = None
                         continue
@@ -359,6 +372,7 @@ def extraer_tablas_pdf_agentes(pdf_path: str, log) -> dict:
 
                     e = etiqueta_raw.upper()
 
+                    # ── DATOS PERSONALES ──────────────────────────────────────
                     if "PRIMER APELLIDO" in e:
                         datos["PRIMER APELLIDO"] = valor
                     elif "SEGUNDO APELLIDO" in e:
@@ -366,9 +380,17 @@ def extraer_tablas_pdf_agentes(pdf_path: str, log) -> dict:
                     elif "NOMBRE" in e and "EMPRESA" not in e and "RAZÓN" not in e and "SOCIAL" not in e:
                         datos["NOMBRE"] = valor
                     elif "TIPO DE DOCUMENTO" in e:
-                        datos["TIPO DE DOCUMENTO"] = valor
+                        # Directivos: el PDF pone el número en este campo y el tipo en el siguiente
+                        if es_directivos:
+                            datos["Nº DE DOCUMENTO"] = valor
+                        else:
+                            datos["TIPO DE DOCUMENTO"] = valor
                     elif "Nº" in e and "DOCUMENTO" in e:
-                        datos["Nº DE DOCUMENTO"] = valor
+                        # Directivos: el PDF pone el tipo (NIE/NIF) en este campo
+                        if es_directivos:
+                            datos["TIPO DE DOCUMENTO"] = valor
+                        else:
+                            datos["Nº DE DOCUMENTO"] = valor
                     elif "SEXO" in e:
                         datos["SEXO"] = valor
                     elif "FECHA DE NACIMIENTO" in e:
@@ -391,31 +413,41 @@ def extraer_tablas_pdf_agentes(pdf_path: str, log) -> dict:
                         datos["RESIDE EN LOCALIDAD <5000"] = valor
                     elif "PERSONA CON DISCAPACIDAD" in e:
                         datos["PERSONA CON DISCAPACIDAD"] = valor
-                    elif "LINKEDIN" in e:
-                        datos["PERFIL LINKEDIN"] = valor
                     elif "NIVEL DE ESTUDIOS" in e:
                         datos["NIVEL DE ESTUDIOS"] = valor
+
+                    # ── SOLO DIRECTIVOS ───────────────────────────────────────
+                    elif "TITULACION" in e:
+                        datos["TITULACION"] = valor
+                    elif "RELACIÓN CON LA EMPRESA" in e:
+                        datos["RELACIÓN CON LA EMPRESA"] = valor
+
+                    # ── SOLO AGENTES ──────────────────────────────────────────
+                    elif "LINKEDIN" in e:
+                        datos["PERFIL LINKEDIN"] = valor
                     elif "COMPLEMENTARIA" in e and "DIGITALIZACIÓN" in e and "GESTIÓN" not in e:
                         datos["FORMACIÓN DIGITALIZACIÓN"] = valor
                         ultima_clave = "FORMACIÓN DIGITALIZACIÓN"
                         continue
                     elif "GESTIÓN" in e and "PROYECTOS" in e:
                         datos["FORMACIÓN GESTIÓN PROYECTOS"] = valor
-                    # FIX 3: AÑOS antes que EXPERIENCIA
                     elif "AÑOS DE EXPERIENCIA LABORAL" in e:
                         datos["AÑOS EXPERIENCIA LABORAL"] = valor
                     elif "EXPERIENCIA LABORAL EN PUESTOS" in e or "EXPERIENCIA EN DIGITALIZACIÓN" in e:
                         datos["EXPERIENCIA DIGITALIZACIÓN"] = valor
                     elif "SITUACIÓN LABORAL ACTUAL" in e:
                         datos["SITUACIÓN LABORAL"] = valor
+
+                    # ── DATOS EMPRESA ─────────────────────────────────────────
                     elif "NOMBRE EMPRESA" in e or ("NOMBRE" in e and "RAZÓN SOCIAL" in e):
                         datos["NOMBRE EMPRESA"] = valor
-                    # FIX 2: etiqueta 'NIF' sola = NIF EMPRESA
-                    elif e.strip() == "NIF" or ("NIF" in e and "EMPRESA" in e):
+                    elif "NIF EMPRESA" in e or e.strip() == "NIF":
                         datos["NIF EMPRESA"] = valor
-                    elif "DEPARTAMENTO" in e and "EMPRESA" in e:
+                    elif "DEPARTAMENTO" in e:
+                        # Directivos: etiqueta es solo "DEPARTAMENTO" (sin "EMPRESA")
                         datos["DEPARTAMENTO EMPRESA"] = valor
-                    elif ("PUESTO" in e or "CARGO" in e) and "EMPRESA" in e:
+                    elif "PUESTO" in e or "CARGO" in e:
+                        # Directivos: etiqueta es solo "PUESTO/CARGO" (sin "EMPRESA")
                         datos["PUESTO EMPRESA"] = valor
                     elif "ACTIVIDAD DE LA EMPRESA" in e:
                         datos["ACTIVIDAD EMPRESA"] = valor
@@ -443,6 +475,10 @@ def extraer_tablas_pdf_agentes(pdf_path: str, log) -> dict:
                         datos["ÁMBITO RURAL EMPRESA"] = valor
                     elif "NIVEL DE MADUREZ DIGITAL" in e:
                         datos["MADUREZ DIGITAL EMPRESA"] = valor
+                    elif "CANALES DE RELACION DE LA EMPRESA" in e:
+                        datos["CANALES RELACION EMPRESA"] = valor
+                    elif "PROFESIONALES CON PERFIL TIC" in e:
+                        datos["PERFIL TIC EMPRESA"] = valor
                     elif "POLITICAS DE SOSTENIBILIDAD" in e:
                         datos["SOSTENIBILIDAD EMPRESA"] = valor
                     elif "POLÍTICAS O PLANES" in e or "PLANES DE TRANSFORMACIÓN DIGITAL" in e:
@@ -451,11 +487,15 @@ def extraer_tablas_pdf_agentes(pdf_path: str, log) -> dict:
                         datos["MUJER DIRECTIVA EMPRESA"] = valor
                     elif "PORCENTAJE DE MUJERES" in e:
                         datos["PORCENTAJE MUJERES EMPRESA"] = valor
-                    elif "MOTIVACIÓN" in e:
+
+                    # ── MOTIVACIÓN ────────────────────────────────────────────
+                    elif "DESCRIBIR MOTIVACIÓN" in e or (e == "MOTIVACIÓN"):
                         datos["MOTIVACIÓN"] = valor
+
+                    # ── DECLARACIONES ─────────────────────────────────────────
                     elif "ACEPTO LOS TÉRMINOS" in e or ("ACEPTO" in e and "TÉRMINOS" in e):
                         datos["ACEPTO CONDICIONADO"] = valor
-                    elif "EMPRESA DONDE TRABAJO" in e or ("DECLARO" in e and "PYME" in e):
+                    elif "EMPRESA DONDE" in e or "SOY DIRECTIVO" in e or ("DECLARO" in e and "PYME" in e):
                         datos["DECLARO PYME"] = valor
                     elif "DECLARO RESPONSABLEMENTE QUE TODA" in e or ("INFORMACIÓN" in e and "SOLICITUD" in e and "DECLARO" in e):
                         datos["DECLARO REALIDAD"] = valor
@@ -467,16 +507,6 @@ def extraer_tablas_pdf_agentes(pdf_path: str, log) -> dict:
                         datos["AUTORIZO DATOS"] = valor
                     elif "DATO RELATIVO A DISCAPACIDAD" in e:
                         datos["ACEPTO DISCAPACIDAD"] = valor
-                        
-                    #! DIRECTIVOS (hay que arreglar)
-                    elif "TITULACION" in e:
-                        datos["TITULACION"] = valor
-                    elif "RELACIÓN CON LA EMPRESA" in e:
-                        datos["RELACIÓN CON LA EMPRESA"] = valor
-                    elif "CANALES DE RELACION DE LA EMPRESA" in e:
-                        datos["CANALES RELACION EMPRESA"] = valor
-                    elif "PROFESIONALES CON PERFIL TIC" in e:
-                        datos["PERFIL TIC EMPRESA"] = valor
 
                     ultima_clave = None
 
@@ -486,7 +516,7 @@ def extraer_tablas_pdf_agentes(pdf_path: str, log) -> dict:
     log.info(f"\n  Total campos extraídos: {len(datos)}")
     return datos
 
-# Escribir valor en celda
+
 def escribir_valor_celda(ws, coordenada, valor, log):
     try:
         for merged_range in ws.merged_cells.ranges:
@@ -504,7 +534,7 @@ def escribir_valor_celda(ws, coordenada, valor, log):
         log.error(f"      Error escribiendo en {coordenada}: {str(ex)}")
         return False
 
-# Rellenar plantilla de Excel
+
 def rellenar_excel(mapa_datos, mapeo_celdas, plantilla, salida, nombre_hoja, log):
     log.info("📝 Generando archivo Excel...")
     shutil.copy2(plantilla, salida)
@@ -534,7 +564,7 @@ def rellenar_excel(mapa_datos, mapeo_celdas, plantilla, salida, nombre_hoja, log
         log.warning(f"  Celdas omitidas (combinadas): {celdas_omitidas}")
     return celdas_ok
 
-# Obtener nombre de archivo de salida
+
 def obtener_nombre_archivo(mapa_datos):
     nombre = mapa_datos.get("NOMBRE", "")
     apellido1 = mapa_datos.get("PRIMER APELLIDO", "")
@@ -543,7 +573,7 @@ def obtener_nombre_archivo(mapa_datos):
     nombre_completo = re.sub(r'[\\/*?:"<>|]', "", nombre_completo)
     return f"Formulario {nombre_completo}.xlsm"
 
-# Función principal
+
 def main():
     # FIX: en modo --windowed el exe no tiene consola y sys.stdout es None
     if sys.stdout and hasattr(sys.stdout, 'buffer'):
@@ -600,7 +630,7 @@ def main():
         log.info(f"📄 {i}/{len(pdfs)}: {pdf_path.name}")
 
         try:
-            datos = extraer_tablas_pdf_agentes(str(pdf_path), log)
+            datos = extraer_tablas_pdf(str(pdf_path), tipo, log)
             if not datos:
                 log.error("No se extrajeron datos")
                 continue
@@ -609,20 +639,12 @@ def main():
             for campo in sorted(datos.keys()):
                 log.info(f"  {campo}: {datos[campo][:50]}")
 
-            log.info("\n🔍 VERIFICACIÓN CAMPOS PROBLEMÁTICOS:")
-            for campo in ["FORMACIÓN GESTIÓN PROYECTOS", "AÑOS EXPERIENCIA LABORAL",
-                          "EXPERIENCIA DIGITALIZACIÓN", "NIF EMPRESA"]:
-                if campo in datos:
-                    log.info(f"  ✅ {campo} = {datos[campo]}")
-                else:
-                    log.warning(f"  ⚠ {campo} NO encontrado")
-
             nombre_salida = obtener_nombre_archivo(datos)
             ruta_salida = carpeta_salida / nombre_salida
             contador = 1
             while ruta_salida.exists():
-                nombre_base = ruta_salida.stem.replace("_formulario", "")
-                ruta_salida = carpeta_salida / f"Formulario {nombre_base}_{contador}.xlsm"
+                nombre_base = ruta_salida.stem
+                ruta_salida = carpeta_salida / f"{nombre_base}_{contador}.xlsm"
                 contador += 1
 
             celdas = rellenar_excel(datos, mapeo, str(ruta_plantilla),
@@ -639,6 +661,7 @@ def main():
     log.success(f"✅ Completado: {exitosos}/{len(pdfs)}")
     log.completado()
     messagebox.showinfo("Éxito", f"Procesados: {exitosos}/{len(pdfs)}\nGuardados en:\n{carpeta_salida}")
+
 
 if __name__ == "__main__":
     main()
