@@ -5,14 +5,6 @@
 ║   Hecho por RaulRDA.com, Pablo Álvarez y Pelayo Fernández  ║
 ╚════════════════════════════════════════════════════════════╝
 """
-# INSTALACIÓN:
-#? pip install pdfplumber openpyxl
-
-# USO:
-#? python main.py
-
-# CONVERTIR A EXE (opcional):
-#? py -m PyInstaller --onefile --windowed --name "PDF_a_Excel" --icon="icono.ico" --add-data "_plantillas;_plantillas" --add-data "icono.ico;." --collect-all pdfplumber --collect-all pdfminer main.py
 
 import re
 import shutil
@@ -347,13 +339,12 @@ def rellenar_excel(mapa_datos, mapeo_celdas, plantilla, salida, nombre_hoja, log
 
 # ── EXTRACCIÓN PDF ───────────────────────────────────────────
 def extraer_tablas_pdf(pdf_path: str, tipo: str, log) -> dict:
-    es_directivos = (tipo == "Directivos")
     datos = {}
     ultima_clave = None
     n_tablas = 0
 
     with pdfplumber.open(pdf_path) as pdf:
-        for pagina_num, pagina in enumerate(pdf.pages, 1):
+        for _, pagina in enumerate(pdf.pages, 1):
             tablas = pagina.extract_tables()
             if not tablas:
                 continue
