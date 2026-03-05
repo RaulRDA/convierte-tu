@@ -3,6 +3,8 @@
 ║   PDF Formulario Agentes / Directivos  →  Excel             ║
 ╚══════════════════════════════════════════════════════════════╝
 """
+# ToDo: verificar que el mapeo de directivos va bien
+# ToDo: arreglar el bug de valores intercambiados en agentes (acepto/no procede)
 
 # Dependencias: pip install pdfplumber openpyxl
 
