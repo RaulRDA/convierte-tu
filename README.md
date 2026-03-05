@@ -14,6 +14,8 @@ Lee un formulario PDF rellenado por un alumno, extrae todos sus campos y los vue
 - Agentes del Cambio — versión 2
 - Personas de Equipos Directivos
 
+Al arrancar, comprueba en segundo plano si hay una versión más reciente disponible y avisa al usuario con opción de ir a descargarla. Si no hay conexión, el programa arranca igualmente sin ningún problema.
+
 ---
 
 ## Uso
@@ -30,7 +32,9 @@ Los archivos generados siguen el formato `Formulario Apellido_Nombre.xlsm`.
 
 ```
 pdfplumber   — extracción de tablas del PDF
+pypdf        — lectura alternativa de texto del PDF
 openpyxl     — lectura y escritura de ficheros Excel (.xlsm con VBA)
+requests     — comprobación de actualizaciones
 tkinter      — interfaz gráfica (incluido en la instalación estándar de Python)
 ```
 
@@ -44,23 +48,35 @@ Cada tipo de formulario tiene su propio diccionario `MAPEO_*` que relaciona el n
 
 **Extracción del PDF**
 
-La función `extraer_tablas_pdf()` itera sobre todas las tablas de todas las páginas usando `pdfplumber`. Cada fila se evalúa contra una cadena de `elif` que identifica el campo por palabras clave en la etiqueta.
+El motor de extracción combina tres estrategias en cascada, ejecutándolas en orden y mezclando los resultados para maximizar los campos recuperados:
 
-Hay tres particularidades importantes documentadas en el código:
+1. **Tablas** — `_extraer_por_tablas()` itera sobre todas las tablas de todas las páginas usando `pdfplumber`. Cada fila se evalúa contra una cadena de `elif` que identifica el campo por palabras clave en la etiqueta, usando siempre la cadena normalizada (sin tildes, en mayúsculas) para evitar fallos con variaciones tipográficas del PDF.
 
-1. En el formulario de Directivos, los campos `TIPO DE DOCUMENTO` y `Nº DE DOCUMENTO` aparecen invertidos en el PDF respecto al Excel, así que se cruzan al asignarlos.
+2. **Coordenadas X** — `_extraer_por_coordenadas()` analiza la posición horizontal de cada palabra en la página. Todo lo que cae a la izquierda de un umbral fijo se trata como etiqueta; lo que cae a la derecha, como valor. Útil cuando el PDF no tiene tablas reales sino texto posicionado visualmente.
 
-2. `FORMACIÓN GESTIÓN PROYECTOS` no tiene etiqueta propia en algunos PDFs — aparece como una fila sin label justo después de `FORMACIÓN DIGITALIZACIÓN`. Se resuelve rastreando `ultima_clave`.
+3. **Líneas de texto** — `_extraer_por_lineas()` recorre las líneas en busca de patrones de etiquetas conocidas. Actúa como último recurso y rellena solo los campos que las dos estrategias anteriores no hayan capturado.
 
-3. Las declaraciones finales (Acepto/No procede) están en columnas distintas según el tipo de formulario, por lo que el valor se busca en toda la fila si la columna 1 viene vacía.
+Hay dos particularidades importantes documentadas en el código:
 
-**Declaraciones forzadas**
+1. `FORMACIÓN GESTIÓN PROYECTOS` no tiene etiqueta propia en algunos PDFs — aparece como una fila sin label justo después de `FORMACIÓN DIGITALIZACIÓN`. Se resuelve rastreando `ultima_clave` durante la iteración de tablas.
 
-En Agentes (2) y Directivos todos los términos se fijan a `"Acepto"` independientemente de lo que diga el PDF, ya que ese es el único valor válido en esos formularios. En Agentes (1) solo el campo `DECLARO PYME` se lee del PDF porque puede contener `"No procede"`.
+2. Las declaraciones finales se fijan siempre a `"Acepto"` en Agentes (2) y Directivos, ya que ese es el único valor válido. En Agentes (1) el campo `DECLARO PYME` se lee del PDF porque puede contener `"No procede"`.
+
+**Post-procesado**
+
+Tras la extracción, `postprocesar_campos()` normaliza los valores antes de escribirlos en el Excel: limpia texto residual, resuelve listas de opciones con `/`, extrae el valor SI/NO de campos booleanos, parsea fechas en distintos formatos y vacía los datos de empresa si el participante declara estar desempleado.
 
 **Detección de PDFs no legibles**
 
 Un PDF escaneado como imagen no tiene texto extraíble, pero las declaraciones forzadas harían que `datos` nunca estuviese vacío. Por eso la validación comprueba que exista al menos un campo real (`NOMBRE`, `EMAIL`, `NIF EMPRESA`, etc.) antes de considerar la extracción exitosa.
+
+**Log de errores**
+
+Si algún PDF no se puede convertir, se genera automáticamente un fichero `log_errores_*.txt` en la carpeta de destino con el nombre del archivo, el tipo de error y el detalle completo.
+
+**Actualizaciones automáticas**
+
+`lanzar_comprobacion_actualizacion()` arranca un hilo `daemon` que consulta la API de GitHub al inicio. Si encuentra una versión con tag superior a `VERSION`, programa la notificación en el hilo principal con `root.after()`. Cualquier error de red se ignora silenciosamente para no interrumpir al usuario.
 
 **Ruta base**
 
@@ -73,10 +89,19 @@ def get_base_dir() -> Path:
 
 Cuando PyInstaller empaqueta la app con `--onefile`, extrae los recursos a una carpeta temporal en `sys._MEIPASS`. Esta función devuelve siempre la ruta correcta tanto en desarrollo como en el ejecutable.
 
+**Versión y URL de actualizaciones**
+
+Las dos únicas constantes que hay que tocar en cada nueva versión están al principio de `main.py`:
+
+```python
+VERSION    = "1.1.0"
+UPDATE_URL = "<url>/releases/latest"
+```
+
 ### Compilar el ejecutable
 
 ```bash
-pip install pyinstaller pdfplumber openpyxl
+pip install pyinstaller pdfplumber pypdf openpyxl requests
 
 py -m PyInstaller --onefile --windowed --name "ConvierteTU" \
   --icon="icono.ico" \
@@ -91,19 +116,19 @@ El ejecutable resultante queda en `dist/ConvierteTU.exe`. Las plantillas y el ic
 
 ### Añadir un nuevo tipo de formulario
 
-1. Crear el diccionario `MAPEO_NUEVO` con los campos y celdas.
+1. Crear el diccionario `MAPEO_NUEVO` con los campos y celdas y añadirlo a `MAPEO_POR_TIPO`.
 2. Añadir la entrada en `PLANTILLAS` con la ruta de la plantilla, el nombre de la hoja y el límite de PDFs.
-3. Actualizar el selector de mapeo en `main()`.
-4. Si el nuevo formulario tiene etiquetas distintas para campos ya existentes, añadir las condiciones necesarias en `extraer_tablas_pdf()`.
+3. Ampliar `_mapear_campo_tabla()` si el nuevo formulario tiene etiquetas distintas para campos ya existentes.
+4. Si hay campos booleanos nuevos, añadirlos a `CAMPOS_SI_NO`. Si hay campos de empresa nuevos, añadirlos a `CAMPOS_EMPRESA`.
 
 ---
 
 ## Limitaciones conocidas
 
-Los PDFs escaneados como imagen no son legibles. `pdfplumber` solo extrae texto de PDFs digitales. Si un alumno entrega un PDF generado escaneando el formulario en papel, la app lo detectará y lo reportará como no convertido.
+Los PDFs escaneados como imagen no son legibles. `pdfplumber` y `pypdf` solo extraen texto de PDFs digitales. Si un alumno entrega un PDF generado escaneando el formulario en papel, la app lo detectará y lo reportará como no convertido.
 
 ---
 
-## Autores
+## Créditos
 
-Desarrollado por RaulRDA.com, Pablo Álvarez y Pelayo Fernández para Grupo ATU.
+Hecho por [RaulRDA](https://raulrda.com) · [Pablo Álvarez](https://github.com/pabloalvf2004) · [Pelayo Fernández](https://github.com/Pelayo89) | Grupo ATU © 2026
