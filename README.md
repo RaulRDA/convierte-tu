@@ -1,4 +1,4 @@
-# PDF a Excel — Grupo ATU
+# ConvierteTU — Grupo ATU
 
 Herramienta de escritorio desarrollada para Grupo ATU que automatiza el proceso de trasladar los datos de los formularios PDF de inscripción del programa Generación Digital a las plantillas Excel correspondientes.
 
@@ -18,7 +18,7 @@ Lee un formulario PDF rellenado por un alumno, extrae todos sus campos y los vue
 
 ## Uso
 
-Ejecuta `PDF_a_Excel.exe`, selecciona el tipo de plantilla, elige los PDFs que quieras procesar, indica la carpeta de destino y espera. Al terminar aparece un resumen con los archivos convertidos y, si los hay, los que no se pudieron leer.
+Ejecuta `ConvierteTU.exe`, selecciona el tipo de plantilla, elige los PDFs que quieras procesar, indica la carpeta de destino y espera. Al terminar aparece un resumen con los archivos convertidos y, si los hay, los que no se pudieron leer.
 
 Los archivos generados siguen el formato `Formulario Apellido_Nombre.xlsm`.
 
@@ -36,7 +36,7 @@ tkinter      — interfaz gráfica (incluido en la instalación estándar de Pyt
 
 ### Estructura del código
 
-Todo el proyecto vive en un único fichero `pdf_a_excel_agentes.py`. La razón es sencilla: facilita el empaquetado con PyInstaller y reduce la fricción para quien lo mantenga.
+Todo el proyecto vive en un único fichero `main.py`. La razón es sencilla: facilita el empaquetado con PyInstaller y reduce la fricción para quien lo mantenga.
 
 **Mapeos de celdas**
 
@@ -78,16 +78,16 @@ Cuando PyInstaller empaqueta la app con `--onefile`, extrae los recursos a una c
 ```bash
 pip install pyinstaller pdfplumber openpyxl
 
-py -m PyInstaller --onefile --windowed --name "PDF_a_Excel" \
+py -m PyInstaller --onefile --windowed --name "ConvierteTU" \
   --icon="icono.ico" \
   --add-data "_plantillas;_plantillas" \
   --add-data "icono.ico;." \
   --collect-all pdfplumber \
   --collect-all pdfminer \
-  PDF_a_Excel.py
+  main.py
 ```
 
-El ejecutable resultante queda en `dist/PDF_a_Excel.exe`. Las plantillas y el icono van empaquetados dentro, no hace falta distribuir nada más.
+El ejecutable resultante queda en `dist/ConvierteTU.exe`. Las plantillas y el icono van empaquetados dentro, no hace falta distribuir nada más.
 
 ### Añadir un nuevo tipo de formulario
 
