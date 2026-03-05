@@ -358,17 +358,38 @@ def leer_lineas_pdf(ruta_pdf: str) -> list:
     Extrae líneas de TODAS las páginas usando pypdf.
     Fallback a pdfplumber si pypdf falla o devuelve vacío.
     """
+    errores = []
+
+    # 1) Intento con pypdf (más tolerante en muchos casos)
     try:
-        reader = PdfReader(ruta_pdf)
-        texto = "\n".join(p.extract_text() or "" for p in reader.pages)
+        with open(ruta_pdf, "rb") as fh:
+            reader = PdfReader(fh)
+            trozos = []
+            for page in reader.pages:
+                try:
+                    trozos.append(page.extract_text() or "")
+                except Exception as e:
+                    errores.append(f"pypdf(page): {type(e).__name__}: {e}")
+            texto = "\n".join(trozos)
         lineas = [l.strip() for l in texto.splitlines() if l.strip()]
         if lineas:
             return lineas
-    except Exception:
-        pass
-    with pdfplumber.open(ruta_pdf) as pdf:
-        texto = "\n".join(p.extract_text() or "" for p in pdf.pages)
-    return [l.strip() for l in texto.splitlines() if l.strip()]
+        errores.append("pypdf: sin texto extraible")
+    except Exception as e:
+        errores.append(f"pypdf: {type(e).__name__}: {e}")
+
+    # 2) Fallback con pdfplumber
+    try:
+        with pdfplumber.open(ruta_pdf) as pdf:
+            texto = "\n".join((p.extract_text() or "") for p in pdf.pages)
+        lineas = [l.strip() for l in texto.splitlines() if l.strip()]
+        if lineas:
+            return lineas
+        errores.append("pdfplumber: sin texto extraible")
+    except Exception as e:
+        errores.append(f"pdfplumber: {type(e).__name__}: {e}")
+
+    raise ValueError("No se pudo extraer texto del PDF. " + " | ".join(errores))
 
 
 ENCABEZADOS_STOP = {
@@ -982,6 +1003,33 @@ def seleccionar_archivos(root):
     return list(rutas_pdf), carpeta_salida, limite
 
 
+def guardar_log_pdfs_ilegibles(carpeta_salida: str, pdfs_ilegibles: list[tuple[str, str, str]]) -> str | None:
+    if not pdfs_ilegibles:
+        return None
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ruta_log = os.path.join(carpeta_salida, f"log_pdfs_ilegibles_{timestamp}.txt")
+    with open(ruta_log, "w", encoding="utf-8") as f:
+        f.write("LOG DE PDF ILEGIBLES\n")
+        f.write(f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"Total: {len(pdfs_ilegibles)}\n\n")
+        for idx, (pdf, tipo_error, detalle) in enumerate(pdfs_ilegibles, start=1):
+            f.write(f"{idx}. PDF: {pdf}\n")
+            f.write(f"   Error: {tipo_error}\n")
+            f.write(f"   Detalle: {detalle}\n\n")
+    return ruta_log
+
+
+def imprimir_seguro(texto: str):
+    """Imprime en consola evitando errores de codificación en terminales Windows."""
+    try:
+        print(texto)
+    except UnicodeEncodeError:
+        # Fallback: eliminar caracteres no representables en la codificación actual
+        encoding = getattr(getattr(__import__('sys'), 'stdout', None), 'encoding', None) or 'utf-8'
+        safe = texto.encode(encoding, errors='replace').decode(encoding, errors='replace')
+        print(safe)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # MAIN
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1001,25 +1049,34 @@ def main():
     if limite and limite > 0 and total_seleccionados > limite:
         omitidos = total_seleccionados - limite
         rutas_pdf = rutas_pdf[:limite]
-        print(f"⚠️  Límite de {limite} formularios: se omiten {omitidos} PDF(s).")
+        imprimir_seguro(f"AVISO: Límite de {limite} formularios: se omiten {omitidos} PDF(s).")
 
     errores    = []
+    errores_rellenado = []
     procesados = 0
+    pdfs_ilegibles = []
 
     for i, ruta_pdf in enumerate(rutas_pdf, start=1):
         nombre_pdf = os.path.basename(ruta_pdf)
         try:
-            # 1. Leer líneas una sola vez (se reutilizan para detección y extracción)
             lineas = leer_lineas_pdf(ruta_pdf)
+            if not lineas:
+                raise ValueError("Sin texto extraíble")
+        except Exception as e:
+            pdfs_ilegibles.append((nombre_pdf, type(e).__name__, str(e)))
+            errores.append(f"{nombre_pdf}: PDF ilegible ({e})")
+            imprimir_seguro(f"  ERROR [{i}/{len(rutas_pdf)}] {nombre_pdf}: PDF ilegible ({e})")
+            continue
 
+        try:
             # 2. Detectar tipo usando las líneas ya leídas
             tipo = detectar_tipo_pdf(lineas)
-            print(f"Procesando [{i}/{len(rutas_pdf)}]: {nombre_pdf}  →  tipo: {tipo}")
+            imprimir_seguro(f"Procesando [{i}/{len(rutas_pdf)}]: {nombre_pdf} -> tipo: {tipo}")
 
             # 3. Extraer y postprocesar campos
             campos = leer_campos_pdf(ruta_pdf, lineas)
             campos = postprocesar_campos(campos)
-            print(f"  Campos extraídos: {len(campos)}")
+            imprimir_seguro(f"  Campos extraidos: {len(campos)}")
 
             # 4. Generar nombre de salida
             apellido = buscar_valor_en_campos(campos, normalizar("PRIMER APELLIDO")) or "alumno"
@@ -1029,24 +1086,47 @@ def main():
 
             # 5. Rellenar y guardar (plantilla embebida, sin diálogo)
             rellenar_formulario(campos, ruta_salida, tipo)
-            print(f"  → Guardado: {nombre_salida}")
+            imprimir_seguro(f"  Guardado: {nombre_salida}")
 
             procesados += 1
 
         except Exception as e:
+            errores_rellenado.append((nombre_pdf, type(e).__name__, str(e)))
             errores.append(f"{nombre_pdf}: {e}")
-            print(f"  ERROR: {e}")
+            imprimir_seguro(f"  ERROR [{i}/{len(rutas_pdf)}] {nombre_pdf}: {e}")
+
+    ruta_log_ilegibles = None
+    try:
+        ruta_log_ilegibles = guardar_log_pdfs_ilegibles(carpeta_salida, pdfs_ilegibles)
+    except Exception as e:
+        errores.append(f"No se pudo guardar el log de PDF ilegibles: {e}")
+        imprimir_seguro(f"  ERROR: no se pudo guardar log de PDF ilegibles ({e})")
 
     # Resumen final
-    resumen = f"✅ Procesados: {procesados} de {total_seleccionados} PDF(s)"
+    total_ilegibles = len(pdfs_ilegibles)
+    total_rellenado = len(errores_rellenado)
+    resumen = (
+        f"Procesados OK: {procesados} de {total_seleccionados} PDF(s)"
+        f"\nIlegibles: {total_ilegibles}"
+        f"\nErrores de rellenado: {total_rellenado}"
+    )
     if omitidos:
-        resumen += f"\n\n⚠️ {omitidos} PDF(s) omitidos por límite de {limite} formularios."
-    if errores:
-        resumen += f"\n\n❌ Errores ({len(errores)}):\n" + "\n".join(errores)
+        resumen += f"\n\nAVISO: {omitidos} PDF(s) omitidos por limite de {limite} formularios."
+    if ruta_log_ilegibles:
+        resumen += f"\n\nLog de PDF ilegibles: {ruta_log_ilegibles}"
+    if errores_rellenado:
+        resumen += f"\n\nDetalle errores de rellenado ({total_rellenado}):\n"
+        resumen += "\n".join(f"{pdf}: {tipo} ({detalle})" for pdf, tipo, detalle in errores_rellenado)
+    elif errores:
+        resumen += f"\n\nErrores ({len(errores)}):\n" + "\n".join(errores)
 
-    messagebox.showinfo("Proceso completado", resumen, parent=root)
+    try:
+        messagebox.showinfo("Proceso completado", resumen, parent=root)
+    except Exception:
+        # Si no hay UI disponible, al menos mostrar por consola
+        pass
     root.destroy()
-    print("\n" + resumen)
+    imprimir_seguro("\n" + resumen)
 
 
 if __name__ == "__main__":
