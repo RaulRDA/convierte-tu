@@ -1,8 +1,10 @@
 """
 ╔══════════════════════════════════════════════════════════════╗
-║   PDF Formulario Agentes  →  Excel                          ║
+║   PDF Formulario Agentes  →  Excel                           ║
 ╚══════════════════════════════════════════════════════════════╝
 """
+
+# Dependencias: pip install pdfplumber openpyxl
 
 import re
 import shutil
