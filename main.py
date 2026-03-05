@@ -394,9 +394,9 @@ def extraer_tablas_pdf(pdf_path: str, tipo: str, log) -> dict:
                     elif "NOMBRE" in e and "EMPRESA" not in e and "RAZÓN" not in e and "SOCIAL" not in e:
                         datos["NOMBRE"] = valor
                     elif "TIPO DE DOCUMENTO" in e:
-                        datos["TIPO DE DOCUMENTO"] = valor
+                        datos["Nº DE DOCUMENTO" if es_directivos else "TIPO DE DOCUMENTO"] = valor
                     elif "Nº" in e and "DOCUMENTO" in e:
-                        datos["Nº DE DOCUMENTO"] = valor
+                        datos["TIPO DE DOCUMENTO" if es_directivos else "Nº DE DOCUMENTO"] = valor
                     elif "SEXO" in e:
                         datos["SEXO"] = valor
                     elif "FECHA DE NACIMIENTO" in e:
