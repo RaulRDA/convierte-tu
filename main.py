@@ -16,7 +16,7 @@ from tkinter import filedialog, messagebox, ttk, scrolledtext
 
 import pdfplumber
 import openpyxl
-from openpyxl.utils import get_column_letter, column_index_from_string
+from openpyxl.utils import column_index_from_string
 from openpyxl.utils.cell import coordinate_from_string
 
 
@@ -97,9 +97,70 @@ MAPEO_AGENTES2 = {
 
 MAPEO_AGENTES1 = MAPEO_AGENTES2.copy()
 MAPEO_AGENTES1["ACEPTO CONDICIONADO"] = "B80"
-MAPEO_DIRECTIVOS = {}
 
+MAPEO_DIRECTIVOS = {
+    # DATOS PERSONALES (Filas 6-23)
+    "PRIMER APELLIDO": "B6",
+    "SEGUNDO APELLIDO": "B7",
+    "NOMBRE": "B8",
+    "TIPO DE DOCUMENTO": "B9",
+    "Nº DE DOCUMENTO": "B10",
+    "SEXO": "B11",
+    "FECHA DE NACIMIENTO": "B12",
+    "DIRECCION": "B13",
+    "CIUDAD": "B14",
+    "CODIGO POSTAL": "B15",
+    "CCAA": "B16",
+    "PROVINCIA": "B17",
+    "TELÉFONO": "B18",
+    "EMAIL": "B19",
+    "RESIDE EN LOCALIDAD <5000": "B20",
+    "PERSONA CON DISCAPACIDAD": "B21",
+    "NIVEL DE ESTUDIOS": "B22",
+    "TITULACION": "B23",
 
+    # DATOS PROFESIONALES (Filas 26-29)
+    "NOMBRE EMPRESA": "B26",
+    "RELACIÓN CON LA EMPRESA": "B27",
+    "DEPARTAMENTO EMPRESA": "B28",
+    "PUESTO EMPRESA": "B29",
+
+    # DATOS DE LA EMPRESA (Filas 32-51)
+    "NIF EMPRESA": "B32",
+    "ACTIVIDAD EMPRESA": "B33",
+    "TAMAÑO EMPRESA": "B34",
+    "DIRECCIÓN EMPRESA": "B35",
+    "CIUDAD EMPRESA": "B36",
+    "CODIGO POSTAL EMPRESA": "B37",
+    "CCAA EMPRESA": "B38",
+    "PROVINCIA EMPRESA": "B39",
+    "TELÉFONO EMPRESA": "B40",
+    "WEB EMPRESA": "B41",
+    "ANTIGÜEDAD EMPRESA": "B42",
+    "FACTURACIÓN EMPRESA": "B43",
+    "ÁMBITO RURAL EMPRESA": "B44",
+    "MADUREZ DIGITAL EMPRESA": "B45",
+    "CANALES RELACION EMPRESA": "B46",
+    "PERFIL TIC EMPRESA": "B47",
+    "SOSTENIBILIDAD EMPRESA": "B48",
+    "PLAN DIGITAL EMPRESA": "B49",
+    "MUJER DIRECTIVA EMPRESA": "B50",
+    "PORCENTAJE MUJERES EMPRESA": "B51",
+
+    # MOTIVACIÓN (Fila 54)
+    "MOTIVACIÓN": "B54",
+
+    # DECLARACIONES (Filas 85-91)
+    "ACEPTO CONDICIONADO": "B85",
+    "DECLARO PYME": "B86",
+    "DECLARO REALIDAD": "B87",
+    "DECLARO NO RECIBIDA": "B88",
+    "DECLARO CONFLICTO": "B89",
+    "AUTORIZO DATOS": "B90",
+    "ACEPTO DISCAPACIDAD": "B91",
+}
+
+# Establecer ícono para ventana
 def _set_icon(ventana):
     """Aplica icono.ico a una ventana Tk si el archivo existe."""
     ico = BASE_DIR / "icono.ico"
@@ -109,7 +170,7 @@ def _set_icon(ventana):
         except Exception:
             pass
 
-
+# Clase de ventana de registro
 class VentanaLog:
     def __init__(self, titulo="Procesando PDFs"):
         self.ventana = tk.Toplevel()
@@ -178,14 +239,14 @@ class VentanaLog:
         if not self.procesando:
             self.ventana.destroy()
 
-
+# Función para limpiar texto
 def limpiar_texto(texto: str) -> str:
     if not texto or not isinstance(texto, str):
         return ""
     texto = texto.replace('\n', ' ').replace('\r', ' ')
     return re.sub(r'\s+', ' ', texto).strip()
 
-
+# Seleccionar tipo de plantilla
 def seleccionar_tipo_plantilla():
     ventana = tk.Toplevel()
     ventana.title("Seleccionar tipo de plantilla")
@@ -229,12 +290,12 @@ def seleccionar_tipo_plantilla():
     ventana.wait_window()
     return resultado[0] if resultado else None
 
-
+# Seleccionar carpeta de salida
 def seleccionar_carpeta_salida():
     carpeta = filedialog.askdirectory(title="Selecciona la carpeta donde guardar los resultados")
     return Path(carpeta) if carpeta else None
 
-
+# Verificar hoja de Excel
 def verificar_hoja_excel(archivo_excel, nombre_hoja_buscar, log):
     try:
         wb = openpyxl.load_workbook(archivo_excel, keep_vba=True, read_only=True)
@@ -255,7 +316,7 @@ def verificar_hoja_excel(archivo_excel, nombre_hoja_buscar, log):
         log.error(f"Error al leer Excel: {e}")
         return None
 
-
+# Extraer datos del PDF
 def extraer_tablas_pdf_agentes(pdf_path: str, log) -> dict:
     log.info("🔍 Extrayendo datos del PDF...")
     datos = {}
@@ -404,6 +465,16 @@ def extraer_tablas_pdf_agentes(pdf_path: str, log) -> dict:
                         datos["AUTORIZO DATOS"] = valor
                     elif "DATO RELATIVO A DISCAPACIDAD" in e:
                         datos["ACEPTO DISCAPACIDAD"] = valor
+                        
+                    #! DIRECTIVOS (hay que arreglar)
+                    elif "TITULACION" in e:
+                        datos["TITULACION"] = valor
+                    elif "RELACIÓN CON LA EMPRESA" in e:
+                        datos["RELACIÓN CON LA EMPRESA"] = valor
+                    elif "CANALES DE RELACION DE LA EMPRESA" in e:
+                        datos["CANALES RELACION EMPRESA"] = valor
+                    elif "PROFESIONALES CON PERFIL TIC" in e:
+                        datos["PERFIL TIC EMPRESA"] = valor
 
                     ultima_clave = None
 
@@ -413,7 +484,7 @@ def extraer_tablas_pdf_agentes(pdf_path: str, log) -> dict:
     log.info(f"\n  Total campos extraídos: {len(datos)}")
     return datos
 
-
+# Escribir valor en celda
 def escribir_valor_celda(ws, coordenada, valor, log):
     try:
         for merged_range in ws.merged_cells.ranges:
@@ -431,7 +502,7 @@ def escribir_valor_celda(ws, coordenada, valor, log):
         log.error(f"      Error escribiendo en {coordenada}: {str(ex)}")
         return False
 
-
+# Rellenar plantilla de Excel
 def rellenar_excel(mapa_datos, mapeo_celdas, plantilla, salida, nombre_hoja, log):
     log.info("📝 Generando archivo Excel...")
     shutil.copy2(plantilla, salida)
@@ -461,7 +532,7 @@ def rellenar_excel(mapa_datos, mapeo_celdas, plantilla, salida, nombre_hoja, log
         log.warning(f"  Celdas omitidas (combinadas): {celdas_omitidas}")
     return celdas_ok
 
-
+# Obtener nombre de archivo de salida
 def obtener_nombre_archivo(mapa_datos):
     nombre = mapa_datos.get("NOMBRE", "")
     apellido1 = mapa_datos.get("PRIMER APELLIDO", "")
@@ -470,7 +541,7 @@ def obtener_nombre_archivo(mapa_datos):
     nombre_completo = re.sub(r'[\\/*?:"<>|]', "", nombre_completo)
     return f"Formulario {nombre_completo}.xlsm"
 
-
+# Función principal
 def main():
     # FIX: en modo --windowed el exe no tiene consola y sys.stdout es None
     if sys.stdout and hasattr(sys.stdout, 'buffer'):
@@ -566,7 +637,6 @@ def main():
     log.success(f"✅ Completado: {exitosos}/{len(pdfs)}")
     log.completado()
     messagebox.showinfo("Éxito", f"Procesados: {exitosos}/{len(pdfs)}\nGuardados en:\n{carpeta_salida}")
-
 
 if __name__ == "__main__":
     main()
