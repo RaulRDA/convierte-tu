@@ -4,6 +4,8 @@
 ╚══════════════════════════════════════════════════════════════╝
 """
 
+# todo: añadir directivos, arreglar campos inversos en agentes
+
 # Dependencias: pip install pdfplumber openpyxl
 
 import re
