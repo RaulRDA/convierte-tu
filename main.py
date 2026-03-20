@@ -231,6 +231,9 @@ ENCABEZADOS_STOP = {
 
 # ── UTILIDADES ───────────────────────────────────────────────
 def _set_icon(ventana):
+    # iconbitmap con .ico solo funciona en Windows; en macOS se omite
+    if sys.platform == "darwin":
+        return
     ico = BASE_DIR / "icono.ico"
     if ico.exists():
         try:

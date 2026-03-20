@@ -18,9 +18,19 @@ Al arrancar, comprueba en segundo plano si hay una versión más reciente dispon
 
 ---
 
+## Compatibilidad
+
+La aplicación es compatible con **Windows** y **macOS**. Todas las dependencias (pdfplumber, pypdf, openpyxl, requests, tkinter) tienen versiones para ambas plataformas, y el código no usa ninguna API exclusiva de Windows. En macOS, el icono de la ventana no se aplica (el formato `.ico` es exclusivo de Windows), pero la aplicación funciona con normalidad.
+
+---
+
 ## Uso
 
-Ejecuta `ConvierteTU.exe`, selecciona el tipo de plantilla, elige los PDFs que quieras procesar, indica la carpeta de destino y espera. Al terminar aparece un resumen con los archivos convertidos y, si los hay, los que no se pudieron leer.
+**Windows:** ejecuta `ConvierteTU.exe`.
+
+**macOS:** ejecuta `ConvierteTU.app` o, si usas el código fuente directamente, `python3 main.py`.
+
+En ambos casos: selecciona el tipo de plantilla, elige los PDFs que quieras procesar, indica la carpeta de destino y espera. Al terminar aparece un resumen con los archivos convertidos y, si los hay, los que no se pudieron leer.
 
 Los archivos generados siguen el formato `Formulario Apellido_Nombre.xlsm`.
 
@@ -100,6 +110,8 @@ UPDATE_URL = "<url>/releases/latest"
 
 ### Compilar el ejecutable
 
+**Windows**
+
 ```bash
 pip install pyinstaller pdfplumber pypdf openpyxl requests
 
@@ -112,7 +124,23 @@ py -m PyInstaller --onefile --windowed --name "ConvierteTU" \
   main.py
 ```
 
-El ejecutable resultante queda en `dist/ConvierteTU.exe`. Las plantillas y el icono van empaquetados dentro, no hace falta distribuir nada más.
+El ejecutable resultante queda en `dist/ConvierteTU.exe`.
+
+**macOS**
+
+```bash
+pip3 install pyinstaller pdfplumber pypdf openpyxl requests
+
+python3 -m PyInstaller --onefile --windowed --name "ConvierteTU" \
+  --add-data "_plantillas:_plantillas" \
+  --collect-all pdfplumber \
+  --collect-all pdfminer \
+  main.py
+```
+
+El bundle resultante queda en `dist/ConvierteTU.app`. En macOS se omite el parámetro `--icon` porque el formato `.ico` no es compatible; si quieres icono personalizado, convierte `icono.ico` a `icono.icns` y usa `--icon="icono.icns"`.
+
+En ambas plataformas las plantillas van empaquetadas dentro del ejecutable y no hace falta distribuir nada más.
 
 ### Añadir un nuevo tipo de formulario
 
